@@ -15,23 +15,10 @@ def test_settings_loads_from_env(monkeypatch):
     assert s.github_repository == "user/repo"
 
 
-def test_settings_optional_fields_have_defaults(monkeypatch):
-    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_KEY", '{"type":"test"}')
-
+def test_settings_all_fields_have_defaults():
     from settings import Settings
 
-    s = Settings()
+    s = Settings(_env_file=None)
+    assert s.google_service_account_key == ""
     assert s.github_token == ""
     assert s.github_repository == ""
-
-
-def test_settings_fails_without_required_key():
-    import os
-
-    # Ensure the env var is not set
-    os.environ.pop("GOOGLE_SERVICE_ACCOUNT_KEY", None)
-
-    from settings import Settings
-
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)

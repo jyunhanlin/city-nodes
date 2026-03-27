@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    google_service_account_key: str
+    google_service_account_key: str = ""
     github_token: str = ""
     github_repository: str = ""
 

@@ -8,10 +8,25 @@ import gspread
 HEADER = ["name", "address", "lat", "lng", "category", "note"]
 
 
-def get_gspread_client(service_account_key: str) -> gspread.Client:
-    """Create a gspread client from a JSON service account key string."""
-    key_dict = json.loads(service_account_key)
-    return gspread.service_account_from_dict(key_dict)
+def get_gspread_client(service_account_key: str = "") -> gspread.Client:
+    """Create a gspread client.
+
+    - If service_account_key is provided (local dev): use JSON key directly.
+    - Otherwise (CI/WIF): use default credentials from GOOGLE_APPLICATION_CREDENTIALS.
+    """
+    if service_account_key:
+        key_dict = json.loads(service_account_key)
+        return gspread.service_account_from_dict(key_dict)
+
+    import google.auth
+    from google.auth.transport.requests import Request
+
+    scopes = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    credentials, _ = google.auth.default(scopes=scopes)
+    return gspread.authorize(credentials)
 
 
 def update_sheet(
