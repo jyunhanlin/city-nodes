@@ -43,8 +43,9 @@ def test_removed_items():
 
 
 def test_changed_items():
+    # Same name and coordinates, only a field change — should register as changed
     old = [_item("A", 25.0, 121.0, note="old")]
-    new = [_item("A modified", 25.0, 121.0, note="new")]
+    new = [_item("A", 25.0, 121.0, note="new")]
     diff = compute_diff(old, new)
     assert diff.changed == 1
     assert diff.added == 0
@@ -53,8 +54,9 @@ def test_changed_items():
 
 
 def test_mixed_changes():
-    old = [_item("A", 25.0, 121.0), _item("B", 25.1, 121.1)]
-    new = [_item("A modified", 25.0, 121.0), _item("C", 25.2, 121.2)]
+    # A stays (same name/coords) but gets a field change, B is removed, C is added
+    old = [_item("A", 25.0, 121.0, note="old"), _item("B", 25.1, 121.1)]
+    new = [_item("A", 25.0, 121.0, note="new"), _item("C", 25.2, 121.2)]
     diff = compute_diff(old, new)
     assert diff.added == 1     # C added
     assert diff.removed == 1   # B removed

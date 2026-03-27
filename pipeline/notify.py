@@ -21,7 +21,7 @@ async def notify_update(
     Silently skips if token or repository is not configured (local dev).
     """
     if not token or not repository:
-        print(f"[{source_name}] {summary} (GitHub notification skipping — missing token or repo)")
+        logger.info(f"[{source_name}] {summary} (GitHub notification skipping — missing token or repo)")
         return
 
     async with httpx.AsyncClient() as client:

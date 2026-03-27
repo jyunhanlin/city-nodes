@@ -3,10 +3,13 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 
 import httpx
 
 from sources.base import SourceItem
+
+logger = logging.getLogger(__name__)
 
 CSV_URL = (
     "https://data.taipei/api/dataset/"
@@ -49,8 +52,13 @@ class TrashBinSource:
         if not state:
             return True
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.head(CSV_URL)
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.head(CSV_URL)
+            resp.raise_for_status()
+        except Exception as exc:
+            logger.warning(f"[{self.name}] HEAD request failed: {exc}; assuming update needed.")
+            return True
 
         last_modified = resp.headers.get("last-modified", "")
         content_length = resp.headers.get("content-length", "")
@@ -59,7 +67,7 @@ class TrashBinSource:
         return current_etag != state.get("etag", "")
 
     async def fetch(self) -> tuple[list[SourceItem], dict]:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(CSV_URL)
         resp.raise_for_status()
 

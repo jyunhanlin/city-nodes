@@ -19,9 +19,9 @@ class DiffResult:
 def compute_diff(
     old_data: list[dict[str, Any]], new_data: list[dict[str, Any]]
 ) -> DiffResult:
-    """Compare old and new items keyed by (lat, lng) coordinates."""
-    old_by_key = {(item["lat"], item["lng"]): item for item in old_data}
-    new_by_key = {(item["lat"], item["lng"]): item for item in new_data}
+    """Compare old and new items keyed by (lat, lng, name) to avoid silent drops at duplicate coordinates."""
+    old_by_key = {(item["lat"], item["lng"], item["name"]): item for item in old_data}
+    new_by_key = {(item["lat"], item["lng"], item["name"]): item for item in new_data}
 
     old_keys = set(old_by_key)
     new_keys = set(new_by_key)

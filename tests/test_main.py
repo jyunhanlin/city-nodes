@@ -34,8 +34,8 @@ async def test_run_source_first_run(
     settings.github_token = "ghp_test"
     settings.github_repository = "user/repo"
 
-    with patch("main.get_gspread_client") as mock_client:
-        await run_source(source, config, settings)
+    gs_client = MagicMock()
+    await run_source(source, config, settings, gs_client)
 
     source.check.assert_called_once_with({})
     source.fetch.assert_called_once()
@@ -54,8 +54,9 @@ async def test_run_source_skips_when_no_update(mock_read_state):
 
     config = {"sheet_id": "sid", "sheet_name": "Sheet1"}
     settings = MagicMock()
+    gs_client = MagicMock()
 
-    await run_source(source, config, settings)
+    await run_source(source, config, settings, gs_client)
 
     source.check.assert_called_once()
     source.fetch.assert_not_called()

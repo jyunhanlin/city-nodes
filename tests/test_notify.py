@@ -24,15 +24,17 @@ async def test_notify_creates_github_issue():
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_notify_skips_when_no_token(capsys):
-    await notify_update("trash_bins", "新增 3 筆", token="", repository="user/repo")
-    captured = capsys.readouterr()
-    assert "skipping" in captured.out.lower() or "skip" in captured.out.lower()
+async def test_notify_skips_when_no_token(caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="pipeline.notify"):
+        await notify_update("trash_bins", "新增 3 筆", token="", repository="user/repo")
+    assert any("skipping" in record.message.lower() or "skip" in record.message.lower() for record in caplog.records)
 
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_notify_skips_when_no_repository(capsys):
-    await notify_update("trash_bins", "新增 3 筆", token="ghp_test", repository="")
-    captured = capsys.readouterr()
-    assert "skipping" in captured.out.lower() or "skip" in captured.out.lower()
+async def test_notify_skips_when_no_repository(caplog):
+    import logging
+    with caplog.at_level(logging.INFO, logger="pipeline.notify"):
+        await notify_update("trash_bins", "新增 3 筆", token="ghp_test", repository="")
+    assert any("skipping" in record.message.lower() or "skip" in record.message.lower() for record in caplog.records)

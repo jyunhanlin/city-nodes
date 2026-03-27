@@ -26,7 +26,7 @@ SOURCE_REGISTRY: dict[str, type] = {
 
 
 async def run_source(
-    source: DataSource, config: dict[str, Any], settings: Settings
+    source: DataSource, config: dict[str, Any], settings: Settings, gs_client: Any
 ) -> None:
     """Run the full pipeline for a single source."""
     logger.info(f"[{source.name}] Checking for updates...")
@@ -51,9 +51,8 @@ async def run_source(
         return
 
     # Update Google Sheet
-    client = get_gspread_client(settings.google_service_account_key)
     await asyncio.to_thread(
-        update_sheet, client, config["sheet_id"], config["sheet_name"], items
+        update_sheet, gs_client, config["sheet_id"], config["sheet_name"], items
     )
     logger.info(f"[{source.name}] Google Sheet updated.")
 
@@ -78,7 +77,10 @@ async def main() -> None:
     with open("config.yaml") as f:
         config = yaml.safe_load(f)
 
+    gs_client = get_gspread_client(settings.google_service_account_key)
+
     tasks = []
+    source_names = []
     for name, source_config in config["sources"].items():
         if not source_config.get("enabled", False):
             logger.info(f"[{name}] Disabled, skipping.")
@@ -87,13 +89,14 @@ async def main() -> None:
             logger.warning(f"[{name}] Unknown source, skipping.")
             continue
         source = SOURCE_REGISTRY[name]()
-        tasks.append(run_source(source, source_config, settings))
+        tasks.append(run_source(source, source_config, settings, gs_client))
+        source_names.append(name)
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for i, result in enumerate(results):
+    for name, result in zip(source_names, results):
         if isinstance(result, Exception):
-            logger.error(f"Source failed: {result}", exc_info=result)
+            logger.error(f"[{name}] Source failed: {result}", exc_info=result)
 
 
 if __name__ == "__main__":
