@@ -17,6 +17,8 @@ CSV_URL = (
     "267d550f-c6ec-46e0-b8af-fd5a464eb098/download"
 )
 
+METADATA_URL = "https://data.gov.tw/api/v2/rest/dataset/121355"
+
 
 def parse_csv(raw: bytes) -> list[SourceItem]:
     """Parse Big5-encoded government CSV into normalized SourceItems."""
@@ -54,17 +56,14 @@ class TrashBinSource:
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.head(CSV_URL)
+                resp = await client.get(METADATA_URL)
             resp.raise_for_status()
+            modified_date = resp.json()["result"]["modifiedDate"]
         except Exception as exc:
-            logger.warning(f"[{self.name}] HEAD request failed: {exc}; assuming update needed.")
+            logger.warning(f"[{self.name}] Metadata check failed: {exc}; assuming update needed.")
             return True
 
-        last_modified = resp.headers.get("last-modified", "")
-        content_length = resp.headers.get("content-length", "")
-        current_etag = f"{last_modified}:{content_length}"
-
-        return current_etag != state.get("etag", "")
+        return modified_date != state.get("modified_date", "")
 
     async def fetch(self) -> tuple[list[SourceItem], dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -74,11 +73,18 @@ class TrashBinSource:
         items = parse_csv(resp.content)
 
         data_hash = hashlib.sha256(resp.content).hexdigest()
-        last_modified = resp.headers.get("last-modified", "")
-        content_length = resp.headers.get("content-length", "")
+
+        # Fetch current modifiedDate for state
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                meta_resp = await client.get(METADATA_URL)
+            meta_resp.raise_for_status()
+            modified_date = meta_resp.json()["result"]["modifiedDate"]
+        except Exception:
+            modified_date = ""
 
         new_state = {
-            "etag": f"{last_modified}:{content_length}",
+            "modified_date": modified_date,
             "data_hash": data_hash,
         }
 
