@@ -93,3 +93,28 @@ class ToiletSource:
             return True
 
         return modified_date != state.get("modified_date", "")
+
+    async def fetch(self) -> tuple[list[SourceItem], dict]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(CSV_URL)
+        resp.raise_for_status()
+
+        items = parse_csv(resp.content)
+
+        data_hash = hashlib.sha256(resp.content).hexdigest()
+
+        # Fetch current modifiedDate for state
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                meta_resp = await client.get(METADATA_URL)
+            meta_resp.raise_for_status()
+            modified_date = meta_resp.json()["result"]["modifiedDate"]
+        except Exception:
+            modified_date = ""
+
+        new_state = {
+            "modified_date": modified_date,
+            "data_hash": data_hash,
+        }
+
+        return items, new_state

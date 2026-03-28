@@ -60,3 +60,22 @@ async def test_check_returns_true_when_changed():
     source = ToiletSource()
     state = {"modified_date": "2026-03-04 14:40:28"}
     assert await source.check(state) is True
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_returns_items_and_new_state(sample_toilet_csv: bytes):
+    respx.get(CSV_URL).mock(
+        return_value=httpx.Response(200, content=sample_toilet_csv)
+    )
+    metadata = {"success": True, "result": {"modifiedDate": "2026-03-04 14:40:28"}}
+    respx.get(METADATA_URL).mock(return_value=httpx.Response(200, json=metadata))
+
+    source = ToiletSource()
+    items, new_state = await source.fetch()
+
+    assert len(items) == 3
+    assert items[0]["category"] == "toilet"
+    assert items[0]["name"] == "捷運劍潭站(淡水信義線)"
+    assert new_state["modified_date"] == "2026-03-04 14:40:28"
+    assert "data_hash" in new_state
