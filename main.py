@@ -12,6 +12,7 @@ from pipeline.sheet import get_gspread_client, update_sheet
 from pipeline.state import read_data, read_state, write_data, write_state
 from settings import Settings
 from sources.base import DataSource
+from sources.toilets import ToiletSource
 from sources.trash_bins import TrashBinSource
 
 logging.basicConfig(
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 SOURCE_REGISTRY: dict[str, type] = {
     "trash_bins": TrashBinSource,
+    "toilets": ToiletSource,
 }
 
 
