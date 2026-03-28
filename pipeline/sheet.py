@@ -5,7 +5,8 @@ from typing import Any
 
 import gspread
 
-HEADER = ["name", "address", "lat", "lng", "category", "note"]
+HEADER_DISPLAY = ["name", "address", "latitude", "longitude", "category", "note"]
+HEADER_KEYS = ["name", "address", "lat", "lng", "category", "note"]
 
 
 def get_gspread_client(service_account_key: str = "") -> gspread.Client:
@@ -41,8 +42,8 @@ def update_sheet(
 
     worksheet.clear()
 
-    rows: list[list] = [HEADER]
+    rows: list[list] = [HEADER_DISPLAY]
     for item in items:
-        rows.append([item[col] for col in HEADER])
+        rows.append([item[col] for col in HEADER_KEYS])
 
     worksheet.update(rows, value_input_option="RAW")
