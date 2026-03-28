@@ -31,3 +31,32 @@ def test_parse_csv_skips_rows_with_bad_coordinates():
     ).encode("utf-8")
     items = parse_csv(bad_csv)
     assert len(items) == 0
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_check_returns_true_on_first_run():
+    metadata = {"success": True, "result": {"modifiedDate": "2026-03-04 14:40:28"}}
+    respx.get(METADATA_URL).mock(return_value=httpx.Response(200, json=metadata))
+    source = ToiletSource()
+    assert await source.check({}) is True
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_check_returns_false_when_unchanged():
+    metadata = {"success": True, "result": {"modifiedDate": "2026-03-04 14:40:28"}}
+    respx.get(METADATA_URL).mock(return_value=httpx.Response(200, json=metadata))
+    source = ToiletSource()
+    state = {"modified_date": "2026-03-04 14:40:28"}
+    assert await source.check(state) is False
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_check_returns_true_when_changed():
+    metadata = {"success": True, "result": {"modifiedDate": "2026-03-10 09:00:00"}}
+    respx.get(METADATA_URL).mock(return_value=httpx.Response(200, json=metadata))
+    source = ToiletSource()
+    state = {"modified_date": "2026-03-04 14:40:28"}
+    assert await source.check(state) is True

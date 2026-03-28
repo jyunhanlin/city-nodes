@@ -78,3 +78,18 @@ def parse_csv(raw: bytes) -> list[SourceItem]:
 
 class ToiletSource:
     name = "toilets"
+
+    async def check(self, state: dict) -> bool:
+        if not state:
+            return True
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.get(METADATA_URL)
+            resp.raise_for_status()
+            modified_date = resp.json()["result"]["modifiedDate"]
+        except Exception as exc:
+            logger.warning(f"[{self.name}] Metadata check failed: {exc}; assuming update needed.")
+            return True
+
+        return modified_date != state.get("modified_date", "")
