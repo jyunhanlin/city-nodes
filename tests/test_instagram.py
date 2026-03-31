@@ -47,9 +47,8 @@ def test_merge_extracted(ig_source):
 
 @pytest.mark.asyncio
 @patch("sources.instagram.geocode_location", new_callable=AsyncMock)
-@patch("sources.instagram.deduplicate_locations", new_callable=AsyncMock)
 @patch("sources.instagram.extract_locations", new_callable=AsyncMock)
-async def test_fetch_first_run(mock_extract, mock_dedup, mock_geocode, ig_source):
+async def test_fetch_first_run(mock_extract, mock_geocode, ig_source):
     """First run: no caches, all steps execute."""
     ig_source._scrape = AsyncMock(
         return_value=[
@@ -65,9 +64,6 @@ async def test_fetch_first_run(mock_extract, mock_dedup, mock_geocode, ig_source
     )
     mock_extract.return_value = [
         {"post_shortcode": "abc123", "name": "一蘭拉麵", "area": "信義區"}
-    ]
-    mock_dedup.return_value = [
-        {"canonical_name": "一蘭拉麵", "area": "信義區", "source_posts": ["abc123"]}
     ]
     mock_geocode.return_value = {
         "name": "一蘭拉麵",
@@ -89,16 +85,14 @@ async def test_fetch_first_run(mock_extract, mock_dedup, mock_geocode, ig_source
     assert new_state["last_post_timestamp"] == "2026-03-20T12:00:00+00:00"
 
     mock_extract.assert_called_once()
-    mock_dedup.assert_called_once()
     mock_geocode.assert_called_once()
 
 
 @pytest.mark.asyncio
 @patch("sources.instagram.geocode_location", new_callable=AsyncMock)
-@patch("sources.instagram.deduplicate_locations", new_callable=AsyncMock)
 @patch("sources.instagram.extract_locations", new_callable=AsyncMock)
 async def test_fetch_incremental_skips_cached(
-    mock_extract, mock_dedup, mock_geocode, ig_source
+    mock_extract, mock_geocode, ig_source
 ):
     """Incremental: cached posts are not re-extracted, cached locations not re-geocoded."""
     # Pre-populate caches
@@ -152,13 +146,7 @@ async def test_fetch_incremental_skips_cached(
         {"post_shortcode": "new1", "name": "新店", "area": "中山區"}
     ]
 
-    # Dedup returns both old and new
-    mock_dedup.return_value = [
-        {"canonical_name": "舊店", "area": "", "source_posts": ["old1"]},
-        {"canonical_name": "新店", "area": "中山區", "source_posts": ["new1"]},
-    ]
-
-    # Geocode is only called for "新店" (舊店 is cached)
+    # Geocode is only called for "新店" (舊店 is already in geocode cache)
     mock_geocode.return_value = {
         "name": "新店",
         "address": "新地址",
@@ -183,3 +171,60 @@ async def test_fetch_incremental_skips_cached(
     # Geocode was called only once (for 新店)
     mock_geocode.assert_called_once()
     assert mock_geocode.call_args[0][0] == "新店"
+
+
+@pytest.mark.asyncio
+@patch("sources.instagram.geocode_location", new_callable=AsyncMock)
+@patch("sources.instagram.extract_locations", new_callable=AsyncMock)
+async def test_fetch_dedup_by_address(mock_extract, mock_geocode, ig_source):
+    """Two different names that resolve to the same address should be deduped."""
+    ig_source._scrape = AsyncMock(
+        return_value=[
+            {
+                "shortcode": "p1",
+                "caption": "一蘭拉麵好吃",
+                "timestamp": "2026-03-20T12:00:00+00:00",
+                "location_name": "",
+                "location_lat": None,
+                "location_lng": None,
+            },
+            {
+                "shortcode": "p2",
+                "caption": "一蘭拉面 台北",
+                "timestamp": "2026-03-19T12:00:00+00:00",
+                "location_name": "",
+                "location_lat": None,
+                "location_lng": None,
+            },
+        ]
+    )
+    mock_extract.return_value = [
+        {"post_shortcode": "p1", "name": "一蘭拉麵", "area": "信義區"},
+        {"post_shortcode": "p2", "name": "一蘭拉面 台北", "area": ""},
+    ]
+    # Both names resolve to the same address via Google Places
+    mock_geocode.side_effect = [
+        {
+            "name": "一蘭拉麵",
+            "address": "台北市信義區松仁路8號",
+            "lat": 25.0336,
+            "lng": 121.5678,
+            "category": "restaurant",
+            "note": "",
+        },
+        {
+            "name": "一蘭拉面 台北",
+            "address": "台北市信義區松仁路8號",
+            "lat": 25.0336,
+            "lng": 121.5678,
+            "category": "restaurant",
+            "note": "",
+        },
+    ]
+
+    await ig_source.check({})
+    items, _ = await ig_source.fetch()
+
+    # Same address → deduped to 1 item
+    assert len(items) == 1
+    assert items[0]["address"] == "台北市信義區松仁路8號"

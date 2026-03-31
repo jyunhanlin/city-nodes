@@ -10,7 +10,7 @@ from typing import Any, TypedDict
 import instaloader
 
 from pipeline.geocode import geocode_location
-from pipeline.llm import deduplicate_locations, extract_locations
+from pipeline.llm import extract_locations
 from sources.base import SourceItem
 
 logger = logging.getLogger(__name__)
@@ -77,25 +77,25 @@ class InstagramSource:
         else:
             all_extracted = cached_extracted
 
-        # Step 3: Deduplicate
-        deduped = await self._deduplicate(all_extracted)
-        deduped_names = {d["canonical_name"] for d in deduped}
-
-        # Step 4: Geocode new locations (filter stale cache entries)
+        # Step 3: Geocode all unique location names (cache by name)
         geocode_cache: dict[str, SourceItem] = {
             item["name"]: item
             for item in (self._read_cache("geocoded") or [])
-            if item["name"] in deduped_names
         }
-        new_locs = [d for d in deduped if d["canonical_name"] not in geocode_cache]
+        new_locs = [loc for loc in all_extracted if loc["name"] not in geocode_cache]
 
         if new_locs:
             new_items = await self._geocode(new_locs)
             for item in new_items:
                 geocode_cache[item["name"]] = item
+            self._write_cache("geocoded", list(geocode_cache.values()))
 
-        self._write_cache("geocoded", list(geocode_cache.values()))
-        items = list(geocode_cache.values())
+        # Step 4: Dedup by address (same address = same place)
+        seen: dict[str, SourceItem] = {}
+        for item in geocode_cache.values():
+            if item["address"] not in seen:
+                seen[item["address"]] = item
+        items = list(seen.values())
 
         # Build new state
         new_state: dict[str, str] = {}
@@ -191,17 +191,11 @@ class InstagramSource:
             for (name, area), shortcodes in merged.items()
         ]
 
-    async def _deduplicate(
-        self, locations: list[ExtractedLocation]
-    ) -> list[dict[str, Any]]:
-        """Deduplicate locations using LLM fuzzy matching."""
-        return await deduplicate_locations(locations, api_key=self._api_key)
-
-    async def _geocode(self, locations: list[dict[str, Any]]) -> list[SourceItem]:
+    async def _geocode(self, locations: list[ExtractedLocation]) -> list[SourceItem]:
         """Geocode locations using Google Places API."""
         items: list[SourceItem] = []
         for loc in locations:
-            name = loc["canonical_name"]
+            name = loc["name"]
             area = loc.get("area", "")
             result = await geocode_location(
                 name, area, api_key=self._places_key, category=self.category

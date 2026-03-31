@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 EXTRACT_BATCH_SIZE = 20
 EXTRACT_MODEL = "claude-haiku-4-5-20251001"
-DEDUP_MODEL = "claude-haiku-4-5-20251001"
 
 
 def _parse_json_response(text: str) -> Any:
@@ -76,64 +75,3 @@ async def extract_locations(
             logger.warning(f"Failed to parse LLM extract response for batch {i}: {exc}")
 
     return all_results
-
-
-async def deduplicate_locations(
-    locations: list[dict[str, Any]],
-    *,
-    api_key: str,
-) -> list[dict[str, Any]]:
-    """Group duplicate location names using Claude API.
-
-    Args:
-        locations: List of dicts with 'name', 'area', and 'source_posts' keys.
-        api_key: Anthropic API key.
-
-    Returns:
-        List of dicts with 'canonical_name', 'area', and 'source_posts' keys.
-    """
-    if not locations:
-        return []
-
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-
-    names_text = "\n".join(
-        f"- {loc['name']} (area: {loc['area']}, posts: {','.join(loc['source_posts'])})"
-        for loc in locations
-    )
-
-    response = await client.messages.create(
-        model=DEDUP_MODEL,
-        max_tokens=8192,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "以下是從 Instagram 提取的地點名稱列表，\n"
-                    "請將指向同一個地點的名稱分為同一組，\n"
-                    "每組選出一個最正式的名稱作為代表。\n\n"
-                    f"{names_text}\n\n"
-                    "回傳 JSON array:\n"
-                    '[{"canonical_name": "正式名稱", "area": "區域", '
-                    '"source_posts": ["shortcode1", "shortcode2"]}]\n\n'
-                    "規則：\n"
-                    "- 合併同一地點的所有 source_posts\n"
-                    "- area 取最具體的那個\n"
-                    "- canonical_name 選最正式、最完整的名稱"
-                ),
-            }
-        ],
-    )
-
-    try:
-        return _parse_json_response(response.content[0].text)
-    except (json.JSONDecodeError, IndexError, KeyError) as exc:
-        logger.warning(f"Failed to parse dedup response: {exc}")
-        return [
-            {
-                "canonical_name": loc["name"],
-                "area": loc["area"],
-                "source_posts": loc["source_posts"],
-            }
-            for loc in locations
-        ]

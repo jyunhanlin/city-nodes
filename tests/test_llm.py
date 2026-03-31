@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from pipeline.llm import (
     _parse_json_response,
-    deduplicate_locations,
     extract_locations,
 )
 
@@ -80,58 +79,3 @@ async def test_extract_locations_handles_bad_json(mock_cls):
     results = await extract_locations(posts, api_key="test-key")
 
     assert results == []
-
-
-@pytest.mark.asyncio
-@patch("pipeline.llm.anthropic.AsyncAnthropic")
-async def test_deduplicate_locations(mock_cls):
-    mock_client = MagicMock()
-    mock_cls.return_value = mock_client
-    mock_response = MagicMock()
-    mock_response.content = [
-        MagicMock(
-            text=json.dumps(
-                [
-                    {
-                        "canonical_name": "一蘭拉麵 台北本店",
-                        "area": "信義區",
-                        "source_posts": ["abc", "def"],
-                    }
-                ]
-            )
-        )
-    ]
-    mock_client.messages.create = AsyncMock(return_value=mock_response)
-
-    locations = [
-        {"name": "一蘭拉麵", "area": "信義區", "source_posts": ["abc"]},
-        {"name": "一蘭拉面 台北", "area": "", "source_posts": ["def"]},
-    ]
-    results = await deduplicate_locations(locations, api_key="test-key")
-
-    assert len(results) == 1
-    assert results[0]["canonical_name"] == "一蘭拉麵 台北本店"
-    assert set(results[0]["source_posts"]) == {"abc", "def"}
-
-
-@pytest.mark.asyncio
-async def test_deduplicate_locations_empty_input():
-    results = await deduplicate_locations([], api_key="test-key")
-    assert results == []
-
-
-@pytest.mark.asyncio
-@patch("pipeline.llm.anthropic.AsyncAnthropic")
-async def test_deduplicate_locations_handles_bad_json(mock_cls):
-    mock_client = MagicMock()
-    mock_cls.return_value = mock_client
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="broken")]
-    mock_client.messages.create = AsyncMock(return_value=mock_response)
-
-    locations = [{"name": "A", "area": "", "source_posts": ["p1"]}]
-    results = await deduplicate_locations(locations, api_key="test-key")
-
-    # Falls back to passthrough
-    assert len(results) == 1
-    assert results[0]["canonical_name"] == "A"
