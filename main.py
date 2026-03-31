@@ -78,29 +78,19 @@ async def run_source(
     logger.info(f"[{source.name}] State saved.")
 
 
-def create_source(
-    source_name: str, config: dict[str, Any], settings: Settings
-) -> DataSource:
-    """Create a source instance by name or type.
-
-    If the source name is in SOURCE_REGISTRY, create an instance from there.
-    Otherwise, if config has a 'type' field, try to create it dynamically.
-    """
-    # Check if it's a registered source
-    if source_name in SOURCE_REGISTRY:
-        return SOURCE_REGISTRY[source_name]()
-
-    # Check if it's a type-based source (like instagram)
+def create_source(name: str, config: dict[str, Any], settings: Settings) -> DataSource:
+    """Create a DataSource instance by name or type."""
+    if name in SOURCE_REGISTRY:
+        return SOURCE_REGISTRY[name]()
     source_type = config.get("type")
-    if source_type == "instagram":
-        return InstagramSource(
-            name=source_name,
-            settings=settings,
-            target=config.get("target", ""),
+    if source_type and source_type in TYPE_REGISTRY:
+        return TYPE_REGISTRY[source_type](
+            name=name,
+            target=config["target"],
             category=config.get("category", ""),
+            settings=settings,
         )
-
-    raise ValueError(f"Unknown source: {source_name}")
+    raise ValueError(f"Unknown source: {name}")
 
 
 async def main() -> None:
@@ -117,10 +107,11 @@ async def main() -> None:
         if not source_config.get("enabled", False):
             logger.info(f"[{name}] Disabled, skipping.")
             continue
-        if name not in SOURCE_REGISTRY:
+        try:
+            source = create_source(name, source_config, settings)
+        except ValueError:
             logger.warning(f"[{name}] Unknown source, skipping.")
             continue
-        source = SOURCE_REGISTRY[name]()
         tasks.append(run_source(source, source_config, settings, gs_client))
         source_names.append(name)
 
