@@ -32,7 +32,7 @@ def test_update_sheet_clears_and_writes():
     # Verify the data passed to update
     call_args = mock_worksheet.update.call_args
     rows = call_args[0][0]
-    assert rows[0] == ["name", "address", "lat", "lng", "category", "note"]
+    assert rows[0] == ["name", "address", "latitude", "longitude", "category", "note"]
     assert rows[1] == ["外交部", "中正區中山南路外交部", 25.038, 121.517, "trash_bin", "備註"]
 
 

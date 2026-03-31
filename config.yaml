@@ -7,3 +7,10 @@ sources:
     enabled: true
     sheet_id: '1yLwmMRjMm_xMgYKn2el17O2P0oB1edZDcgPRxYsIQdc'
     sheet_name: '工作表1'
+  ig_maokaishungry:
+    enabled: false
+    type: instagram
+    target: 'maokaishungry'
+    category: 'restaurant'
+    sheet_id: ''
+    sheet_name: '工作表1'

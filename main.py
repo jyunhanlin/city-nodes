@@ -12,6 +12,7 @@ from pipeline.sheet import get_gspread_client, update_sheet
 from pipeline.state import read_data, read_state, write_data, write_state
 from settings import Settings
 from sources.base import DataSource
+from sources.instagram import InstagramSource
 from sources.toilets import ToiletSource
 from sources.trash_bins import TrashBinSource
 
@@ -24,6 +25,10 @@ logger = logging.getLogger(__name__)
 SOURCE_REGISTRY: dict[str, type] = {
     "trash_bins": TrashBinSource,
     "toilets": ToiletSource,
+}
+
+TYPE_REGISTRY: dict[str, type] = {
+    "instagram": InstagramSource,
 }
 
 
@@ -71,6 +76,31 @@ async def run_source(
     write_state(source.name, new_state)
     write_data(source.name, items)
     logger.info(f"[{source.name}] State saved.")
+
+
+def create_source(
+    source_name: str, config: dict[str, Any], settings: Settings
+) -> DataSource:
+    """Create a source instance by name or type.
+
+    If the source name is in SOURCE_REGISTRY, create an instance from there.
+    Otherwise, if config has a 'type' field, try to create it dynamically.
+    """
+    # Check if it's a registered source
+    if source_name in SOURCE_REGISTRY:
+        return SOURCE_REGISTRY[source_name]()
+
+    # Check if it's a type-based source (like instagram)
+    source_type = config.get("type")
+    if source_type == "instagram":
+        return InstagramSource(
+            name=source_name,
+            settings=settings,
+            target=config.get("target", ""),
+            category=config.get("category", ""),
+        )
+
+    raise ValueError(f"Unknown source: {source_name}")
 
 
 async def main() -> None:
