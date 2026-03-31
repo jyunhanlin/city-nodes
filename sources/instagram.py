@@ -49,20 +49,18 @@ class InstagramSource:
         self._api_key = settings.anthropic_api_key if settings else ""
         self._places_key = settings.google_places_api_key if settings else ""
         self._state_dir = state_dir
-        self._state: dict = {}
+        self._new_posts: list[RawPost] = []
 
     async def check(self, state: dict) -> bool:
         self._state = state
-        return True
+        self._new_posts = await self._scrape(state)
+        return bool(self._new_posts) or not state
 
     async def fetch(self) -> tuple[list[SourceItem], dict]:
-        state = self._state
-
-        # Step 1: Scrape new posts and merge with cached
+        # Step 1: Merge new posts (from check) with cached
         cached_posts = self._read_cache("posts") or []
-        new_posts = await self._scrape(state)
-        all_posts = new_posts + cached_posts
-        if new_posts:
+        all_posts = self._new_posts + cached_posts
+        if self._new_posts:
             self._write_cache("posts", all_posts)
 
         # Step 2: Extract locations from unprocessed posts

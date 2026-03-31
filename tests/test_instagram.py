@@ -21,8 +21,23 @@ def ig_source(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_check_always_returns_true(ig_source):
+async def test_check_returns_true_on_first_run(ig_source):
+    ig_source._scrape = AsyncMock(return_value=[])
     assert await ig_source.check({}) is True
+
+
+@pytest.mark.asyncio
+async def test_check_returns_false_when_no_new_posts(ig_source):
+    ig_source._scrape = AsyncMock(return_value=[])
+    assert await ig_source.check({"last_post_timestamp": "2026-03-20T00:00:00+00:00"}) is False
+
+
+@pytest.mark.asyncio
+async def test_check_returns_true_when_new_posts(ig_source):
+    ig_source._scrape = AsyncMock(return_value=[
+        {"shortcode": "new1", "caption": "new", "timestamp": "2026-03-25T00:00:00+00:00",
+         "location_name": "", "location_lat": None, "location_lng": None},
+    ])
     assert await ig_source.check({"last_post_timestamp": "2026-03-20T00:00:00+00:00"}) is True
 
 
@@ -50,18 +65,16 @@ def test_merge_extracted(ig_source):
 @patch("sources.instagram.extract_locations", new_callable=AsyncMock)
 async def test_fetch_first_run(mock_extract, mock_geocode, ig_source):
     """First run: no caches, all steps execute."""
-    ig_source._scrape = AsyncMock(
-        return_value=[
-            {
-                "shortcode": "abc123",
-                "caption": "好吃的拉麵",
-                "timestamp": "2026-03-20T12:00:00+00:00",
-                "location_name": "",
-                "location_lat": None,
-                "location_lng": None,
-            }
-        ]
-    )
+    ig_source._new_posts = [
+        {
+            "shortcode": "abc123",
+            "caption": "好吃的拉麵",
+            "timestamp": "2026-03-20T12:00:00+00:00",
+            "location_name": "",
+            "location_lat": None,
+            "location_lng": None,
+        }
+    ]
     mock_extract.return_value = [
         {"post_shortcode": "abc123", "name": "一蘭拉麵", "area": "信義區"}
     ]
@@ -74,7 +87,6 @@ async def test_fetch_first_run(mock_extract, mock_geocode, ig_source):
         "note": "",
     }
 
-    await ig_source.check({})
     items, new_state = await ig_source.fetch()
 
     assert len(items) == 1
@@ -127,19 +139,17 @@ async def test_fetch_incremental_skips_cached(
         ],
     )
 
-    # Scrape returns one new post
-    ig_source._scrape = AsyncMock(
-        return_value=[
-            {
-                "shortcode": "new1",
-                "caption": "new post",
-                "timestamp": "2026-03-25T00:00:00+00:00",
-                "location_name": "",
-                "location_lat": None,
-                "location_lng": None,
-            }
-        ]
-    )
+    # check() found one new post
+    ig_source._new_posts = [
+        {
+            "shortcode": "new1",
+            "caption": "new post",
+            "timestamp": "2026-03-25T00:00:00+00:00",
+            "location_name": "",
+            "location_lat": None,
+            "location_lng": None,
+        }
+    ]
 
     # Extract only processes the new post
     mock_extract.return_value = [
@@ -156,7 +166,6 @@ async def test_fetch_incremental_skips_cached(
         "note": "",
     }
 
-    await ig_source.check({"last_post_timestamp": "2026-03-10T00:00:00+00:00"})
     items, new_state = await ig_source.fetch()
 
     assert len(items) == 2
@@ -178,26 +187,24 @@ async def test_fetch_incremental_skips_cached(
 @patch("sources.instagram.extract_locations", new_callable=AsyncMock)
 async def test_fetch_dedup_by_address(mock_extract, mock_geocode, ig_source):
     """Two different names that resolve to the same address should be deduped."""
-    ig_source._scrape = AsyncMock(
-        return_value=[
-            {
-                "shortcode": "p1",
-                "caption": "一蘭拉麵好吃",
-                "timestamp": "2026-03-20T12:00:00+00:00",
-                "location_name": "",
-                "location_lat": None,
-                "location_lng": None,
-            },
-            {
-                "shortcode": "p2",
-                "caption": "一蘭拉面 台北",
-                "timestamp": "2026-03-19T12:00:00+00:00",
-                "location_name": "",
-                "location_lat": None,
-                "location_lng": None,
-            },
-        ]
-    )
+    ig_source._new_posts = [
+        {
+            "shortcode": "p1",
+            "caption": "一蘭拉麵好吃",
+            "timestamp": "2026-03-20T12:00:00+00:00",
+            "location_name": "",
+            "location_lat": None,
+            "location_lng": None,
+        },
+        {
+            "shortcode": "p2",
+            "caption": "一蘭拉面 台北",
+            "timestamp": "2026-03-19T12:00:00+00:00",
+            "location_name": "",
+            "location_lat": None,
+            "location_lng": None,
+        },
+    ]
     mock_extract.return_value = [
         {"post_shortcode": "p1", "name": "一蘭拉麵", "area": "信義區"},
         {"post_shortcode": "p2", "name": "一蘭拉面 台北", "area": ""},
@@ -222,7 +229,6 @@ async def test_fetch_dedup_by_address(mock_extract, mock_geocode, ig_source):
         },
     ]
 
-    await ig_source.check({})
     items, _ = await ig_source.fetch()
 
     # Same address → deduped to 1 item
