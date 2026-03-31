@@ -65,12 +65,13 @@ Intermediate structure from LLM extraction:
 
 ## InstagramSource.check(state)
 
-Unlike government data sources that have a metadata API, Instagram has no lightweight "has new data?" endpoint. Strategy:
+`check()` performs the actual Instaloader scrape and stores the results for `fetch()` to use:
 
-- **First run** (`state` is empty): return `True`
-- **Subsequent runs**: always return `True` — the scrape step itself is lightweight (stops at `last_post_timestamp`), so there's no benefit to a separate check
+- **First run** (`state` is empty): scrape all posts, return `True`
+- **Subsequent runs with new posts**: scrape stops at `last_post_timestamp`, return `True`
+- **Subsequent runs with no new posts**: scrape returns empty, return `False` → main.py skips fetch entirely
 
-This keeps the `DataSource` protocol contract intact while acknowledging that IG doesn't support cheap change detection.
+This makes the `DataSource` protocol meaningful: `check()` does the IG connection (the expensive part), and `fetch()` only runs when there's actual new data to process.
 
 ## Settings Access
 
@@ -95,19 +96,26 @@ def create_source(name: str, config: dict, settings: Settings) -> DataSource:
 
 Existing sources don't need settings at construction time, so they remain unchanged.
 
-## Internal Pipeline (InstagramSource.fetch)
+## Internal Pipeline
 
-### Step 1: `_scrape(state)` — Instaloader
+### check(state) — Scrape via Instaloader
 
 - Use Instaloader Python API (not CLI)
 - `download_pictures=False`, `download_videos=False`, `download_comments=False`, `save_metadata=False`
 - No login — public profiles only
 - Incremental: stop when reaching `last_post_timestamp` from state
 - First run: scrape all posts
-- Output: `list[RawPost]`
-- Cache: `state/{name}_posts.json`
+- Stores result in `self._new_posts` for `fetch()` to use
+- Returns `True` if new posts found or first run, `False` otherwise
 
-### Step 2: `_extract(raw_posts)` — Claude API
+### fetch() — Extract, Geocode, Dedup
+
+#### Step 1: Merge new posts with cached
+
+- Merge `self._new_posts` (from check) with `state/{name}_posts.json` cache
+- Write updated cache
+
+#### Step 2: `_extract(raw_posts)` — Claude API
 
 - Batch 20 captions per API call (~40 calls for 782 posts)
 - Use Claude API with JSON mode for structured output
@@ -118,39 +126,35 @@ Existing sources don't need settings at construction time, so they remain unchan
 - Output: `list[ExtractedLocation]`
 - Cache: `state/{name}_extracted.json`
 
-### Step 3: `_deduplicate(locations)` — Claude API
-
-- Send all location names to LLM in one call
-- LLM groups variants of the same location and picks a canonical name
-- Example: `"一蘭拉麵 台北本店"` and `"一蘭拉面（台北）"` → same group
-- Merge `source_posts` lists
-- Runs on full list every time (fast — single LLM call)
-- Output: `list[ExtractedLocation]` (deduplicated)
-- No cache (pure in-memory, re-runs on full list each time)
-
-### Step 4: `_geocode(locations)` — Google Places API
+#### Step 3: `_geocode(locations)` — Google Places API
 
 - Use Places API (New) Text Search endpoint
 - Query: `"{name} {area}"` with `languageCode: "zh-TW"`
 - Take first result → `formattedAddress`, `location.latitude`, `location.longitude`
 - Incremental: only query new location names, cached locations read from cache
 - Locations that fail to geocode are logged and skipped (not fatal)
-- Output: `list[SourceItem]`
 - Cache: `state/{name}_geocoded.json`
+
+#### Step 4: Dedup by address
+
+- Group geocoded results by `formattedAddress`
+- Same address = same physical location → keep first occurrence
+- No LLM needed — Google Places already normalizes names to canonical addresses
+- Output: `list[SourceItem]`
 
 ### Cache & Incremental Strategy
 
 **First run (backfill):**
-1. `_scrape()` fetches all 782 posts → cache
+1. `check()` scrapes all 782 posts
 2. `_extract()` processes all via LLM → cache
-3. `_deduplicate()` groups all names
-4. `_geocode()` queries all unique locations → cache
+3. `_geocode()` queries all unique locations → cache
+4. Dedup by address
 
 **Subsequent runs (incremental):**
-1. `_scrape()` fetches only new posts (stop at `last_post_timestamp`) → append to cache
+1. `check()` scrapes only new posts (stop at `last_post_timestamp`), returns `False` if none
 2. `_extract()` processes only new posts → merge into cache
-3. `_deduplicate()` re-runs on full list (single LLM call, cheap)
-4. `_geocode()` queries only new location names → merge into cache
+3. `_geocode()` queries only new location names → merge into cache
+4. Dedup by address
 
 **Failure recovery:** Each step checks its cache before running. If step 2 failed mid-way, re-run will skip already-extracted posts.
 
